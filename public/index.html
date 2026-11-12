@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QA Mart POS</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="#/sale" class="logo" data-testid="nav-logo">QA<span>Mart</span> POS</a>
+      <nav class="nav" id="nav" data-testid="main-nav"></nav>
+      <div class="account" id="account" data-testid="account-area"></div>
+    </div>
+  </header>
+
+  <main id="app" data-testid="app-root"></main>
+
+  <div class="modal-backdrop" id="modal" hidden data-testid="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button class="modal-close" id="modal-close" aria-label="Close" data-testid="modal-close">&times;</button>
+      <h2 id="modal-title" data-testid="modal-title"></h2>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite" data-testid="toasts"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

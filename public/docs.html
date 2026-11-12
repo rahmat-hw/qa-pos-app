@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QA Mart POS API</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    body { display: block; }
+    .doc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 26px; margin-bottom: 16px; }
+    .doc h2 { margin-top: 0; }
+    .doc h3 { margin-bottom: 6px; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    pre { background: #f2f4f7; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+    td { white-space: normal; vertical-align: top; }
+    .m { font-weight: 700; font-family: ui-monospace, monospace; font-size: 12px; }
+    .GET { color: #1e8449; } .POST { color: #1f5fbf; } .PUT { color: #b9770e; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner"><a href="/" class="logo">QA<span>Mart</span> POS</a><strong>API documentation and business rules</strong></div></header>
+  <main class="page">
+    <section class="doc">
+      <h2>Overview</h2>
+      <p>Base URL: <code id="base"></code>. Requests and responses use JSON. Amounts are integers in Indonesian rupiah (IDR).</p>
+      <p>Every endpoint except <code>/api/health</code>, <code>/api/test/reset</code> and <code>/api/auth/login</code> needs <code>Authorization: Bearer &lt;token&gt;</code>. Tokens are valid for 1 hour and must stop working after logout.</p>
+      <p><strong>Performance requirement:</strong> every endpoint must respond in under <strong>1000 ms</strong>.</p>
+      <p>Error shape:</p>
+      <pre>{ "error": { "code": "VALIDATION_ERROR", "message": "Some fields are invalid.", "details": { "price": "..." } } }</pre>
+      <div class="table-wrap"><table>
+        <tr><th>Status</th><th>Meaning</th></tr>
+        <tr><td>400</td><td>Validation error, invalid JSON, invalid / expired promo code, promo minimum not met</td></tr>
+        <tr><td>401</td><td>Missing, invalid, expired or logged-out token; wrong email or password</td></tr>
+        <tr><td>403</td><td>Not allowed for this role or this user; suspended account</td></tr>
+        <tr><td>404</td><td>Resource or endpoint not found</td></tr>
+        <tr><td>405</td><td>Method not allowed for this endpoint</td></tr>
+        <tr><td>409</td><td>Conflict (duplicate SKU, transaction already voided)</td></tr>
+        <tr><td>422</td><td>Checkout rejected (item out of stock or over stock, insufficient cash)</td></tr>
+        <tr><td>423</td><td>Account locked for 60 seconds after 5 failed login attempts</td></tr>
+      </table></div>
+    </section>
+
+    <section class="doc">
+      <h2>Business rules</h2>
+      <h3>Roles</h3>
+      <ul>
+        <li><strong>Cashier</strong>: makes sales, sees and opens only their own transactions.</li>
+        <li><strong>Manager</strong>: everything a cashier can do, plus sees all transactions, voids transactions, and creates or updates products.</li>
+        <li>Email at login is case-insensitive and surrounding spaces are ignored. Suspended accounts get a 403 with a clear message.</li>
+      </ul>
+      <h3>Cart and stock</h3>
+      <ul>
+        <li>Quantity per line: 1-99, and never more than the stock available. A product with stock 0 cannot be sold.</li>
+        <li>A completed sale reduces stock by the quantity sold. A voided sale puts the stock back.</li>
+      </ul>
+      <h3>Price calculation</h3>
+      <ol>
+        <li><code>subtotal</code> = sum of price &times; qty.</li>
+        <li><code>discount</code> from the promo code (if any).</li>
+        <li><code>tax</code> (PPN 11%) = round((subtotal &minus; discount) &times; 0.11) to the nearest rupiah.</li>
+        <li><code>total</code> = subtotal &minus; discount + tax.</li>
+      </ol>
+      <h3>Promo codes</h3>
+      <div class="table-wrap"><table>
+        <tr><th>Code</th><th>Benefit</th><th>Minimum subtotal</th><th>Maximum discount</th><th>Valid until</th></tr>
+        <tr><td>HEMAT10</td><td>10% off the subtotal (rounded down)</td><td>Rp50.000 (inclusive)</td><td>Rp20.000</td><td>31 Dec 2099</td></tr>
+        <tr><td>DISKON5K</td><td>Rp5.000 off</td><td>Rp25.000 (inclusive)</td><td>-</td><td>31 Dec 2099</td></tr>
+        <tr><td>LAMA2025</td><td>15% off</td><td>-</td><td>Rp30.000</td><td>31 Dec 2025 (expired)</td></tr>
+      </table></div>
+      <p>Codes are case-insensitive. Only one promo code per transaction.</p>
+      <h3>Payment</h3>
+      <ul>
+        <li><strong>cash</strong>: <code>amountPaid</code> is required and must be greater than or equal to the total. <code>change</code> = amountPaid &minus; total.</li>
+        <li><strong>card</strong> and <strong>qris</strong>: the exact total is charged. <code>amountPaid</code> is optional; if sent it must equal the total.</li>
+      </ul>
+      <h3>Void</h3>
+      <ul><li>Managers only. A reason of 5-200 characters is required. A transaction can be voided once (409 after that).</li></ul>
+    </section>
+
+    <section class="doc">
+      <h2>Endpoints</h2>
+      <div class="table-wrap"><table>
+        <tr><th>Method</th><th>Path</th><th>Role</th><th>Description</th></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/health</code></td><td>-</td><td>Service status</td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/test/reset</code></td><td>-</td><td>Restore all data to the initial seed (use for test isolation and cleanup)</td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/auth/login</code></td><td>-</td><td>Body <code>{ email, password }</code> &rarr; <code>{ token, tokenType, expiresIn, user }</code></td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/auth/logout</code></td><td>Any</td><td>Revoke the current token. 204</td></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/auth/me</code></td><td>Any</td><td>Current user</td></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/categories</code></td><td>Any</td><td>Product categories</td></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/products</code></td><td>Any</td><td>Query: <code>q</code> (case-insensitive, name or SKU), <code>category</code>, <code>page</code> (&ge; 1), <code>limit</code> (1-50, default 50) &rarr; <code>{ data, page, limit, total, totalPages }</code></td></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/products/{id}</code></td><td>Any</td><td>Product detail</td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/products</code></td><td>Manager</td><td>Body <code>{ sku: "ABC-123", name (max 80), category, price (int 100-100000000), stock (int 0-100000) }</code>. 201. Duplicate SKU 409</td></tr>
+        <tr><td class="m PUT">PUT</td><td><code>/api/products/{id}</code></td><td>Manager</td><td>Update any of the fields above</td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/cart/calculate</code></td><td>Any</td><td>Price preview without saving. Body <code>{ items: [{ productId, qty }], promoCode? }</code> &rarr; <code>{ items, subtotal, promoCode, discount, taxRate, tax, total }</code></td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/transactions</code></td><td>Any</td><td>Checkout. Body <code>{ items: [{ productId, qty }], promoCode?, payment: { method: "cash" | "card" | "qris", amountPaid? } }</code>. 201 with the transaction (receipt)</td></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/transactions</code></td><td>Any</td><td>Cashier: own transactions. Manager: all. Query <code>status</code> = completed | voided</td></tr>
+        <tr><td class="m GET">GET</td><td><code>/api/transactions/{id}</code></td><td>Owner or manager</td><td>Transaction detail. 403 for another cashier's transaction</td></tr>
+        <tr><td class="m POST">POST</td><td><code>/api/transactions/{id}/void</code></td><td>Manager</td><td>Body <code>{ reason }</code>. Restores stock</td></tr>
+      </table></div>
+    </section>
+
+    <section class="doc">
+      <h2>Example</h2>
+      <pre id="example"></pre>
+    </section>
+  </main>
+  <script>
+    const base = location.origin + '/api';
+    document.getElementById('base').textContent = base;
+    document.getElementById('example').textContent =
+`curl -X POST ${base}/auth/login \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"andi@pos.test","password":"Password123!"}'
+
+curl -X POST ${base}/transactions \\
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \\
+  -d '{"items":[{"productId":3,"qty":2}],"promoCode":"HEMAT10","payment":{"method":"cash","amountPaid":60000}}'`;
+  </script>
+</body>
+</html>

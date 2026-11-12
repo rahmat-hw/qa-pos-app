@@ -1,0 +1,14 @@
+{
+  "name": "qa-mart-pos",
+  "version": "1.0.0",
+  "description": "Target application for the POS QA Engineer skill test: a small point-of-sale web app with a REST API.",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}
