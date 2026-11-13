@@ -7,7 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { CATEGORIES, freshState } = require('./data');
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3001;
 // Seeded defects are ON by default (that is the point of the test).
 // Set SEEDED_BUGS=off to run the reference ("correct") behaviour.
 const BUGS_ON = !/^(off|false|0|no)$/i.test(process.env.SEEDED_BUGS || 'on');
