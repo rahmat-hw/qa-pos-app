@@ -370,7 +370,88 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
 const PUBLIC = path.join(__dirname, 'public');
 
+// ---------- README ----------
+const README = path.join(__dirname, 'README.md');
+const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function inlineMd(s) {
+  const codes = [];
+  s = s.replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  s = escapeHtml(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2">$2</a>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${escapeHtml(codes[i])}</code>`);
+}
+
+// Minimal Markdown -> HTML (headings, paragraphs, lists, tables, code blocks).
+function renderMarkdown(md) {
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+  for (let i = 0; i < lines.length; ) {
+    const line = lines[i];
+    if (/^```/.test(line)) {
+      const buf = [];
+      for (i++; i < lines.length && !/^```/.test(lines[i]); i++) buf.push(lines[i]);
+      i++;
+      out.push(`<pre><code>${escapeHtml(buf.join('\n'))}</code></pre>`);
+    } else if (/^#{1,6}\s/.test(line)) {
+      const level = line.match(/^#+/)[0].length;
+      out.push(`<h${level}>${inlineMd(line.slice(level).trim())}</h${level}>`);
+      i++;
+    } else if (/^\s*\|/.test(line) && /^\s*\|?[\s:-]+\|/.test(lines[i + 1] || '')) {
+      const head = cells(line);
+      const rows = [];
+      for (i += 2; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(cells(lines[i]));
+      out.push('<table><thead><tr>' + head.map((c) => `<th>${inlineMd(c)}</th>`).join('') + '</tr></thead><tbody>'
+        + rows.map((r) => '<tr>' + r.map((c) => `<td>${inlineMd(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>');
+    } else if (/^\s*[-*]\s/.test(line)) {
+      const items = [];
+      for (; i < lines.length && /^\s*[-*]\s/.test(lines[i]); i++) items.push(lines[i].replace(/^\s*[-*]\s/, ''));
+      out.push('<ul>' + items.map((t) => `<li>${inlineMd(t)}</li>`).join('') + '</ul>');
+    } else if (!line.trim()) {
+      i++;
+    } else {
+      const buf = [];
+      for (; i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*[-*]\s|\s*\|)/.test(lines[i]); i++) buf.push(lines[i]);
+      out.push(`<p>${inlineMd(buf.join(' '))}</p>`);
+    }
+  }
+  return out.join('\n');
+}
+
+function serveReadme(res, raw) {
+  fs.readFile(README, 'utf8', (err, md) => {
+    if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('README.md not found'); }
+    if (raw) {
+      res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+      return res.end(md);
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>README - QA Mart POS</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:860px;margin:0 auto;padding:24px 16px;line-height:1.6;color:#1f2328;background:#fff}
+h1,h2{border-bottom:1px solid #d0d7de;padding-bottom:.3em}
+code{background:#f3f4f6;padding:.15em .35em;border-radius:4px;font-size:.9em}
+pre{background:#f6f8fa;padding:12px 16px;border-radius:6px;overflow-x:auto}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;display:block;overflow-x:auto}
+th,td{border:1px solid #d0d7de;padding:6px 12px;text-align:left}
+th{background:#f6f8fa}
+a{color:#0969da}
+.raw{float:right;font-size:.85em}
+@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}code,pre,th{background:#161b22}th,td,h1,h2{border-color:#30363d}a{color:#4493f8}}
+</style></head><body><a class="raw" href="/README.md">View raw</a>
+${renderMarkdown(md)}
+</body></html>`);
+  });
+}
+
 function serveStatic(res, pathname) {
+  if (pathname === '/readme') return serveReadme(res, false);
+  if (pathname === '/README.md' || pathname === '/readme.md') return serveReadme(res, true);
   const rel = pathname === '/' ? '/index.html' : pathname === '/docs' ? '/docs.html' : pathname;
   const file = path.normalize(path.join(PUBLIC, rel));
   if (!file.startsWith(PUBLIC)) return send(res, 403, { error: { code: 'FORBIDDEN', message: 'Forbidden' } });
